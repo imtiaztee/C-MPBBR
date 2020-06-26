@@ -10,7 +10,7 @@ Please access: include/net/inet_connection_socket.h and set: ICSK_CA_PRIV_SIZE t
 Just compile and install is as a module.
 Change the default Congestion Algorithm to "C-MPBBR"
 
-*Above development was based on the Linux version of 4.9.169.*
+*Above development was based on the MPTCP v0.93.4 deployed in Linux kernel version of 4.9.169.*
 
 ********************************************************
 
