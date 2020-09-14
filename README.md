@@ -1,6 +1,6 @@
 # C-MPBBR
- Coupled Multipath BBR (C-MPBBR) for multipath TCP
-This repository has been created for experimenting the C-MPBBR scheme proposed in "Coupled Multipath BBR (C-MPBBR): A Efficient Congestion Control Algorithm for Multipath TCP" in Linux Kernel. ***The article is under review for publication in IEEE Access***
+Coupled Multipath BBR (C-MPBBR) for multipath TCP. <br /> <br />
+This repository has been created for experimenting the C-MPBBR scheme proposed in "Coupled Multipath BBR (C-MPBBR): A Efficient Congestion Control Algorithm for Multipath TCP" in Linux Kernel. The detail article has been published in IEEE Access. ***Article link:  https://ieeexplore.ieee.org/document/9187831***
 
 **#Requirements and Dependencies:** <br />
 Please access: include/net/inet_connection_socket.h and set: ICSK_CA_PRIV_SIZE to 12 * sizeof(u64). <br />
@@ -14,8 +14,8 @@ Change the default Congestion Algorithm to "C-MPBBR"
 
 ********************************************************
 
-Thanks.
-Imtiaz Mahmud.
+Thanks and regards. <br />
+Dr. Imtiaz Mahmud.
 
 ********************************************************
 For any inquiry, please contact at imtiaz.tee@gmail.com.
