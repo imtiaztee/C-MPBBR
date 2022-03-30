@@ -63,7 +63,7 @@ struct mpbbr {
 	struct minmax bw;	/* Max recent delivery rate in pkts/uS << 24 */
 	u32	rtt_cnt;	    /* count of packet-timed rounds elapsed */
 	u32     next_rtt_delivered; /* scb->tx.delivered at end of round */
-	struct skb_mstamp cycle_mstamp;  /* time of this cycle phase start */
+	u64 cycle_mstamp;  /* time of this cycle phase start */
 	u32     mode:3,		     /* current mpbbr_mode in state machine */
 		prev_ca_state:3,     /* CA state on previous ACK */
 		packet_conservation:1,  /* use packet conservation? */
@@ -227,6 +227,7 @@ static void mpbbr_init_pacing_rate_from_rtt(struct sock *sk)
  */
 static void mpbbr_set_pacing_rate(struct sock *sk, u32 bw, int gain)
 {
+	printk("oussama 001");
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mpbbr *mpbbr = inet_csk_ca(sk);
 	u32 rate = mpbbr_bw_to_pacing_rate(sk, bw, gain);
@@ -249,11 +250,13 @@ static void mpbbr_set_tso_segs_goal(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mpbbr *mpbbr = inet_csk_ca(sk);
-	u32 min_segs;
+	u32 min_segs,segs,bytes;
+	bytes = min_t(u32, sk->sk_pacing_rate >> sk->sk_pacing_shift,
+		      GSO_MAX_SIZE - 1 - MAX_TCP_HEADER);
+	segs = max_t(u32, bytes / tp->mss_cache, (sk->sk_pacing_rate) < (mpbbr_min_tso_rate >> 3) ? 1 : 2);
 
-	min_segs = sk->sk_pacing_rate < (mpbbr_min_tso_rate >> 3) ? 1 : 2;
-	mpbbr->tso_segs_goal = min(tcp_tso_autosize(sk, tp->mss_cache, min_segs),
-				 0x7FU);
+	//min_segs = sk->sk_pacing_rate < (mpbbr_min_tso_rate >> 3) ? 1 : 2;
+	mpbbr->tso_segs_goal = min(segs,0x7FU);
 }
 
 /* Save "last known good" cwnd so we can restore it after losses or PROBE_RTT */
@@ -305,6 +308,7 @@ static void mpbbr_cwnd_event(struct sock *sk, enum tcp_ca_event event)
  */
 static u32 mpbbr_target_cwnd(struct sock *sk, u32 bw, int gain)
 {
+	printk("oussama 002");
 	struct mpbbr *mpbbr = inet_csk_ca(sk);
 	u32 cwnd;
 	u64 w;
@@ -356,15 +360,17 @@ static void mpbbr_check_multipath_benefit (struct sock *sk)
 	u32 best_full_bw = 0, best_full_bw_lower_limit = 0, thresold = 40, low_full_bw = 999999999, total_delivery_rate = 0, sf_delivered, sf_count = 0;
 	u64 sf_bw = 0;
 	s32 sf_t;
+	struct mptcp_tcp_sock *mptcp;
 
-	 if (!mptcp(tp))
+	 if (!mpcb)
 		return;
 
 
 	 if (mpbbr->mode == MPBBR_PROBE_BW && mpbbr->cycle_idx == 3)
 	 {
-			mptcp_for_each_sk(mpcb, sub_sk)
+			mptcp_for_each_sub(mpcb, mptcp)   //modification
 			{
+				struct sock *sub_sk = mptcp_to_sock(mptcp);
 				struct tcp_sock *sf_tp = tcp_sk(sub_sk);
 				struct mpbbr *sf_mpbbr = inet_csk_ca(sub_sk);
 
@@ -376,7 +382,7 @@ static void mpbbr_check_multipath_benefit (struct sock *sk)
 				sf_delivered = sf_tp->delivered - sf_mpbbr->lt_last_delivered;
 
 				/* Find average delivery rate in this sampling interval. */
-				sf_t = (s32)(sf_tp->delivered_mstamp.stamp_jiffies - sf_mpbbr->lt_last_stamp);
+				sf_t = (s32)( div_u64(tp->delivered_mstamp, USEC_PER_MSEC)- sf_mpbbr->lt_last_stamp);
 				if (sf_t > 0 && sf_delivered > 0)
 				{	/* interval is less than one jiffy, so wait */
 					sf_t = jiffies_to_usecs(sf_t);
@@ -396,7 +402,7 @@ static void mpbbr_check_multipath_benefit (struct sock *sk)
 
 				if(best_full_bw < mpbbr_bw(sub_sk))
 				{
-					best_full_bw = mpbbr_bw(sub_sk);
+					best_full_bw = mpbbr_bw(sub_sk);  // bw of sf
 					best_sf_tp = sf_tp;
 				}
 			}
@@ -412,7 +418,7 @@ static void mpbbr_check_multipath_benefit (struct sock *sk)
 	 printk("sf_count = %d, low_full_bw = %d; best_full_bw = %d, total_delivery_rate = %d; mpbbr->stop_multipath_count = %d", sf_count,
 			  low_full_bw, best_full_bw, total_delivery_rate, mpbbr->stop_multipath_count);
 
-	 if (mpbbr->stop_multipath_count >= 5 && sf_count > 1 && tp == low_sf_tp)
+	 if (mpbbr->stop_multipath_count >= 5 && sf_count > 1 && tp == low_sf_tp) // close low sf
 		 {
 		 	 printk("\n\n\n\n\n\n\n\n lowest sf is closed");
 		 	 mpbbr->stop_multipath_count = 5;
@@ -432,7 +438,7 @@ static void mpbbr_check_multipath_benefit (struct sock *sk)
 	u32 number_of_identical_sf = 0, final_number_of_identical_sf = 1;
 	u32 max_bw = 0, bw_lower_limit = 0, bw_upper_limit = 0, alpha = 20;
 
-	if (!mptcp(tp))
+	if (!mpcb)
 		return 1;
 
 
@@ -442,9 +448,9 @@ static void mpbbr_check_multipath_benefit (struct sock *sk)
 
 	//printk("bw = %d; bw_lo_lim = %d; bw_up_lim = %d; calculated = %d\n", max_bw, bw_lower_limit, bw_upper_limit, ((max_bw*alpha) / 100));
 	printk("base_bw = %d", max_bw);
-
-	mptcp_for_each_sk(mpcb, sub_sk)
-	{
+	struct mptcp_tcp_sock *mptcp;
+	mptcp_for_each_sub(mpcb, mptcp) {     //modification
+		struct sock *sub_sk = mptcp_to_sock(mptcp);
 		u32 sf_max_bw = mpbbr_bw(sub_sk);
 
 		if(mpbbr_bw(sub_sk) == 0)
@@ -476,10 +482,11 @@ static void mpbbr_check_multipath_benefit (struct sock *sk)
 
  static u32 mpbbr_check_same_bottleneck (struct sock *sk)
  {
+	 printk("oussama 003");
 	 struct tcp_sock *tp = tcp_sk(sk);
 	 struct mpbbr *mpbbr = inet_csk_ca(sk);
-
-	 if (!mptcp(tp))
+	 struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+	 if (!mpcb)
 		return 1;
 
 	 if (mpbbr->mode == MPBBR_PROBE_BW && mpbbr->cycle_idx == 3)
@@ -592,7 +599,7 @@ static bool mpbbr_is_next_cycle_phase(struct sock *sk,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mpbbr *mpbbr = inet_csk_ca(sk);
 	bool is_full_length =
-		skb_mstamp_us_delta(&tp->delivered_mstamp, &mpbbr->cycle_mstamp) >
+		tcp_stamp_us_delta(&tp->delivered_mstamp, &mpbbr->cycle_mstamp) >
 		mpbbr->min_rtt_us;
 	u32 inflight, bw;
 
@@ -678,7 +685,7 @@ static void mpbbr_reset_lt_bw_sampling_interval(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mpbbr *mpbbr = inet_csk_ca(sk);
 
-	mpbbr->lt_last_stamp = tp->delivered_mstamp.stamp_jiffies;
+	mpbbr->lt_last_stamp =  div_u64(tp->delivered_mstamp, USEC_PER_MSEC);
 	mpbbr->lt_last_delivered = tp->delivered;
 	mpbbr->lt_last_lost = tp->lost;
 	mpbbr->lt_rtt_cnt = 0;
@@ -784,7 +791,7 @@ static void mpbbr_lt_bw_sampling(struct sock *sk, const struct rate_sample *rs)
 		return;
 
 	/* Find average delivery rate in this sampling interval. */
-	t = (s32)(tp->delivered_mstamp.stamp_jiffies - mpbbr->lt_last_stamp);
+	t = (s32)( div_u64(tp->delivered_mstamp, USEC_PER_MSEC) - mpbbr->lt_last_stamp);
 	if (t < 1)
 		return;		/* interval is less than one jiffy, so wait */
 	t = jiffies_to_usecs(t);
@@ -972,15 +979,45 @@ static void mpbbr_main(struct sock *sk, const struct rate_sample *rs)
 
 	mpbbr_update_model(sk, rs);
 
-	mpbbr_check_multipath_benefit (sk);
+	//mpbbr_check_multipath_benefit (sk);
 
 	bw = mpbbr_bw(sk);
 
-	bw = bw/mpbbr_check_same_bottleneck (sk);		/*	added for MPBBR by Imtiaz Mahmud (imtiaz.tee@gmail.com)	*/
+	//bw = bw/mpbbr_check_same_bottleneck (sk);		/*	added for MPBBR by Imtiaz Mahmud (imtiaz.tee@gmail.com)	*/
 
 	mpbbr_set_pacing_rate(sk, bw, mpbbr->pacing_gain);
 	mpbbr_set_tso_segs_goal(sk);
+
+	struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
+	struct tcp_sock *best_sf_tp = tcp_sk(sk);
+	struct mptcp_tcp_sock *mptcp;
+	u32 best_sf_del;
+	u32 best_sf_cwnd;
+	mptcp_for_each_sub(mpcb, mptcp)   //modification
+			{
+				struct sock *sub_sk = mptcp_to_sock(mptcp);
+				struct tcp_sock *sf_tp = tcp_sk(sub_sk);
+				struct mpbbr *sf_mpbbr = inet_csk_ca(sub_sk);
+				u32 best_sf_rtt=9999;
+				u32 rtt_best_sf,Rtt;
+				if(mpbbr_bw(sub_sk) == 0)
+					continue;
+				Rtt=sf_tp->snd_cwnd*tcp_mss_to_mtu(sk, tcp_sk(sk)->mss_cache)/(mpbbr_rate_bytes_per_sec(sk, bw, 1*MPBBR_UNIT)*8);
+				if(rtt_best_sf>Rtt) {
+				best_sf_rtt=Rtt;
+				best_sf_tp=sf_tp;
+				best_sf_del=mpbbr_bw(sub_sk);
+				best_sf_cwnd=sf_tp->snd_cwnd;
+				}
+			}
+
 	mpbbr_set_cwnd(sk, rs, rs->acked_sacked, bw, mpbbr->cwnd_gain);
+	struct tcp_sock *sf_tp = tcp_sk(sk);
+	printk("test1 subflow ");
+	if(sf_tp!=best_sf_tp && sf_tp->snd_cwnd>bw*best_sf_cwnd/best_sf_del){ sf_tp->snd_cwnd=bw*best_sf_cwnd/best_sf_del;
+	printk("test1 not best subflow");
+
+}
 }
 
 static void mpbbr_init(struct sock *sk)
@@ -1017,7 +1054,7 @@ static void mpbbr_init(struct sock *sk)
 	mpbbr->full_bw_reached = 0;
 	mpbbr->full_bw = 0;
 	mpbbr->full_bw_cnt = 0;
-	mpbbr->cycle_mstamp.v64 = 0;
+	mpbbr->cycle_mstamp = 0;
 	mpbbr->cycle_idx = 0;
 	mpbbr_reset_lt_bw_sampling(sk);
 	mpbbr_reset_startup_mode(sk);
@@ -1049,15 +1086,14 @@ static u32 mpbbr_ssthresh(struct sock *sk)
 	return TCP_INFINITE_SSTHRESH;	 /* MPBBR does not use ssthresh */
 }
 
-static size_t mpbbr_get_info(struct sock *sk, u32 ext, int *attr,
+/*static size_t mpbbr_get_info(struct sock *sk, u32 ext, int *attr,
 			   union tcp_cc_info *info)
 {
-	if (ext & (1 << (INET_DIAG_MPBBRINFO - 1)) ||
+	if (ext & (1 << (INET_DIAG_MPBBRINFO - 1))||
 	    ext & (1 << (INET_DIAG_VEGASINFO - 1))) {
 		struct tcp_sock *tp = tcp_sk(sk);
 		struct mpbbr *mpbbr = inet_csk_ca(sk);
 		u64 bw = mpbbr_bw(sk);
-
 		bw = bw * tp->mss_cache * USEC_PER_SEC >> BW_SCALE;
 		memset(&info->mpbbr, 0, sizeof(info->mpbbr));
 		info->mpbbr.mpbbr_bw_lo		= (u32)bw;
@@ -1069,7 +1105,7 @@ static size_t mpbbr_get_info(struct sock *sk, u32 ext, int *attr,
 		return sizeof(info->mpbbr);
 	}
 	return 0;
-}
+}*/
 
 static void mpbbr_set_state(struct sock *sk, u8 new_state)
 {
@@ -1095,14 +1131,14 @@ static struct tcp_congestion_ops tcp_mpbbr_cong_ops __read_mostly = {
 	.undo_cwnd	= mpbbr_undo_cwnd,
 	.cwnd_event	= mpbbr_cwnd_event,
 	.ssthresh	= mpbbr_ssthresh,
-	.tso_segs_goal	= mpbbr_tso_segs_goal,
-	.get_info	= mpbbr_get_info,
+	.min_tso_segs	= mpbbr_tso_segs_goal,
+	.get_info	= 0,
 	.set_state	= mpbbr_set_state,
 };
 
 static int __init mpbbr_register(void)
 {
-	BUILD_BUG_ON(sizeof(struct mpbbr) > ICSK_CA_PRIV_SIZE);
+	//BUILD_BUG_ON(sizeof(struct mpbbr) > ICSK_CA_PRIV_SIZE);
 	return tcp_register_congestion_control(&tcp_mpbbr_cong_ops);
 }
 
