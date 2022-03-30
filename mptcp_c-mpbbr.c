@@ -227,7 +227,6 @@ static void mpbbr_init_pacing_rate_from_rtt(struct sock *sk)
  */
 static void mpbbr_set_pacing_rate(struct sock *sk, u32 bw, int gain)
 {
-	printk("oussama 001");
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mpbbr *mpbbr = inet_csk_ca(sk);
 	u32 rate = mpbbr_bw_to_pacing_rate(sk, bw, gain);
@@ -308,7 +307,6 @@ static void mpbbr_cwnd_event(struct sock *sk, enum tcp_ca_event event)
  */
 static u32 mpbbr_target_cwnd(struct sock *sk, u32 bw, int gain)
 {
-	printk("oussama 002");
 	struct mpbbr *mpbbr = inet_csk_ca(sk);
 	u32 cwnd;
 	u64 w;
@@ -415,9 +413,7 @@ static void mpbbr_check_multipath_benefit (struct sock *sk)
 	 else
 		 mpbbr->stop_multipath_count = 0;
 
-	 printk("sf_count = %d, low_full_bw = %d; best_full_bw = %d, total_delivery_rate = %d; mpbbr->stop_multipath_count = %d", sf_count,
-			  low_full_bw, best_full_bw, total_delivery_rate, mpbbr->stop_multipath_count);
-
+	 
 	 if (mpbbr->stop_multipath_count >= 5 && sf_count > 1 && tp == low_sf_tp) // close low sf
 		 {
 		 	 printk("\n\n\n\n\n\n\n\n lowest sf is closed");
@@ -446,8 +442,7 @@ static void mpbbr_check_multipath_benefit (struct sock *sk)
 	bw_lower_limit = max_bw - ((max_bw*alpha) / 100);
 	bw_upper_limit = max_bw + ((max_bw*alpha) / 100);
 
-	//printk("bw = %d; bw_lo_lim = %d; bw_up_lim = %d; calculated = %d\n", max_bw, bw_lower_limit, bw_upper_limit, ((max_bw*alpha) / 100));
-	printk("base_bw = %d", max_bw);
+	
 	struct mptcp_tcp_sock *mptcp;
 	mptcp_for_each_sub(mpcb, mptcp) {     //modification
 		struct sock *sub_sk = mptcp_to_sock(mptcp);
@@ -456,12 +451,12 @@ static void mpbbr_check_multipath_benefit (struct sock *sk)
 		if(mpbbr_bw(sub_sk) == 0)
 			continue;
 
-		printk("sf_bw = %d", sf_max_bw);
+		
 
 		if (sf_max_bw >= bw_lower_limit && sf_max_bw <= bw_upper_limit)
 				number_of_identical_sf += 1;
 	}
-	printk("\n");
+	
 
 	if(number_of_identical_sf > 1 && mpbbr->last_number_of_identical_sf > 1)
 		final_number_of_identical_sf = number_of_identical_sf;
@@ -482,7 +477,7 @@ static void mpbbr_check_multipath_benefit (struct sock *sk)
 
  static u32 mpbbr_check_same_bottleneck (struct sock *sk)
  {
-	 printk("oussama 003");
+	 
 	 struct tcp_sock *tp = tcp_sk(sk);
 	 struct mpbbr *mpbbr = inet_csk_ca(sk);
 	 struct mptcp_cb *mpcb = tcp_sk(sk)->mpcb;
@@ -1013,10 +1008,8 @@ static void mpbbr_main(struct sock *sk, const struct rate_sample *rs)
 
 	mpbbr_set_cwnd(sk, rs, rs->acked_sacked, bw, mpbbr->cwnd_gain);
 	struct tcp_sock *sf_tp = tcp_sk(sk);
-	printk("test1 subflow ");
 	if(sf_tp!=best_sf_tp && sf_tp->snd_cwnd>bw*best_sf_cwnd/best_sf_del){ sf_tp->snd_cwnd=bw*best_sf_cwnd/best_sf_del;
-	printk("test1 not best subflow");
-
+	
 }
 }
 
